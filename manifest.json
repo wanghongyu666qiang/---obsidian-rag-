@@ -1,0 +1,10 @@
+{
+  "id": "zhixue",
+  "name": "智学 - AI 知识助手",
+  "version": "0.1.3",
+  "minAppVersion": "1.0.0",
+  "description": "RAG-Anything 驱动的 AI 知识助手，让你的笔记活起来。支持智能问答、知识关联、AI印象、习惯学习。",
+  "author": "王宏宇",
+  "authorUrl": "",
+  "isDesktopOnly": true
+}

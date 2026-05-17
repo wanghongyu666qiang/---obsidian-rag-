@@ -1,0 +1,20 @@
+# 1. 密钥，千万不要上传！
+/data.json
+/backend/.env
+
+# 2. 个人对话记录与图谱数据库
+/_zhixue/
+/backend/_zhixue/
+*.log
+
+# 3. 依赖缓存
+/node_modules/
+/backend/__pycache__/
+/backend/venv/
+*.pyc
+
+# 4. 编辑器及临时文
+.vscode/
+.idea/
+.history/
+.DS_Store

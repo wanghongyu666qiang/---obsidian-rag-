@@ -1,0 +1,867 @@
+/**
+ * 智学 (ZhiXue) - 侧边栏聊天视图
+ */
+
+import { ItemView, WorkspaceLeaf, Notice, MarkdownView, MarkdownRenderer, Component } from "obsidian";
+import { CHAT_VIEW_TYPE, type ChatMessage, type ZhiXueSettings, type OllamaModel } from "../utils/constants";
+import { ChatMessageComponent } from "./ChatMessage";
+import { BackendClient } from "../services/BackendClient";
+import { ConversationStore } from "../services/ConversationStore";
+
+export class ChatView extends ItemView {
+    private settings: ZhiXueSettings;
+    private backendClient: BackendClient;
+    private conversationStore: ConversationStore;
+    private saveSettings: () => void;
+    private messages: ChatMessage[] = [];
+    private messagesContainer!: HTMLElement;
+    private inputEl!: HTMLTextAreaElement;
+    private quickActionsEl!: HTMLElement;
+    private isLoading = false;
+    private dropdownEl: HTMLElement | null = null;
+    private cachedModels: OllamaModel[] = [];
+    private modelsLoading = false;
+
+    constructor(
+        leaf: WorkspaceLeaf,
+        settings: ZhiXueSettings,
+        backendClient: BackendClient,
+        conversationStore: ConversationStore,
+        saveSettings: () => void
+    ) {
+        super(leaf);
+        this.settings = settings;
+        this.backendClient = backendClient;
+        this.conversationStore = conversationStore;
+        this.saveSettings = saveSettings;
+    }
+
+    getViewType() {
+        return CHAT_VIEW_TYPE;
+    }
+
+    getDisplayText() {
+        return `智学 · ${this.settings.aiName}`;
+    }
+
+    getIcon() {
+        return "brain";
+    }
+
+    async onOpen() {
+        this.containerEl.empty();
+        this.containerEl.style.display = "flex";
+        this.containerEl.style.flexDirection = "column";
+        this.containerEl.style.height = "100%";
+        this.containerEl.style.overflow = "hidden";
+
+        // === 标题栏 ===
+        const headerEl = this.containerEl.createDiv({ cls: "zhixue-chat-header" });
+        headerEl.createSpan({
+            cls: "zhixue-chat-title",
+            text: `${this.settings.aiName} · AI 知识助手`,
+        });
+
+        // 模型指示器按钮
+        const isApiModel = this.settings.llmModel?.includes("/");
+        const modelIcon = isApiModel ? "☁️" : "🧠";
+        const modelIndicator = headerEl.createEl("button", {
+            cls: "zhixue-model-indicator",
+            text: `${modelIcon} ${this.settings.llmModel}`,
+        });
+        modelIndicator.addEventListener("click", (e: MouseEvent) => {
+            e.stopPropagation();
+            this.toggleModelDropdown(modelIndicator);
+        });
+
+        // === 对话区域 ===
+        this.messagesContainer = this.containerEl.createDiv({
+            cls: "zhixue-chat-messages",
+        });
+
+        // === 快捷操作栏 ===
+        this.quickActionsEl = this.containerEl.createDiv({ cls: "zhixue-quick-actions" });
+        this.createQuickAction("🔍", "解释", this.handleExplain.bind(this));
+        this.createQuickAction("🔗", "关联", this.handleRelated.bind(this));
+        this.createQuickAction("📝", "总结", this.handleSummarize.bind(this));
+        this.createQuickAction("❓", "提问", this.handleDeepQuestion.bind(this));
+
+        // === 输入区域 ===
+        const inputContainer = this.containerEl.createDiv({ cls: "zhixue-chat-input-container" });
+        this.inputEl = inputContainer.createEl("textarea", {
+            cls: "zhixue-chat-input",
+            attr: {
+                placeholder: "输入你的问题...",
+                rows: "2",
+            },
+        });
+
+        // 发送按钮
+        const sendBtn = inputContainer.createEl("button", {
+            cls: "zhixue-chat-send-btn",
+            text: "➤",
+        });
+        sendBtn.addEventListener("click", () => this.handleSend());
+
+        // 快捷键：Enter 发送，Shift+Enter 换行
+        this.inputEl.addEventListener("keydown", (e) => {
+            if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                this.handleSend();
+            }
+        });
+    }
+
+    async onClose() {
+        // 清理下拉菜单和事件监听
+        this.closeModelDropdown();
+        this.modelsLoading = false;
+        this.cachedModels = [];
+
+        // 自动保存对话
+        if (this.settings.autoSaveConversation && this.messages.length > 1) {
+            await this.conversationStore.saveConversation(this.messages, this.settings.aiName);
+        }
+    }
+
+    // === 快捷操作 ===
+
+    private createQuickAction(icon: string, label: string, callback: () => void) {
+        const btn = this.quickActionsEl.createEl("button", {
+            cls: "zhixue-quick-action-btn",
+        });
+        btn.createSpan({ text: icon });
+        btn.createSpan({ text: label });
+        btn.addEventListener("click", callback);
+    }
+
+    private async handleExplain() {
+        const selection = this.getSelectedText();
+        if (!selection) {
+            new Notice("请先选中要解释的文字");
+            return;
+        }
+        await this.sendQuery(`请解释以下内容：\n\n${selection}`);
+    }
+
+    private async handleRelated() {
+        const selection = this.getSelectedText();
+        const context = selection || this.getCurrentNoteTitle();
+        if (!context) {
+            new Notice("请选中文字或打开一篇笔记");
+            return;
+        }
+        await this.sendQuery(`请找出与以下内容相关的笔记和知识：\n\n${context}`);
+    }
+
+    private async handleSummarize() {
+        const title = this.getCurrentNoteTitle();
+        if (!title) {
+            new Notice("请先打开一篇笔记");
+            return;
+        }
+        await this.sendQuery(`请总结当前笔记「${title}」的主要内容`);
+    }
+
+    private async handleDeepQuestion() {
+        const title = this.getCurrentNoteTitle();
+        const selection = this.getSelectedText();
+        const context = selection || title;
+        if (!context) {
+            new Notice("请选中文字或打开一篇笔记");
+            return;
+        }
+        await this.sendQuery(`基于「${context}」，请提出3个深入思考的问题，帮助我更好地理解这个知识点`);
+    }
+
+    // === 发送查询 ===
+
+    private async handleSend() {
+        const question = this.inputEl.value.trim();
+        if (!question || this.isLoading) return;
+
+        this.inputEl.value = "";
+        await this.sendQuery(question);
+    }
+
+    private async sendQuery(question: string) {
+        if (this.isLoading) return;
+        this.isLoading = true;
+
+        // 添加用户消息
+        this.addUserMessage(question);
+
+        // 显示加载状态
+        const loadingEl = this.showLoading();
+
+        try {
+            const currentNote = this.getCurrentNotePath();
+            // 传入对话历史（最近 8 条消息）
+            const history = this.messages.slice(-8).map(m => ({
+                role: m.role,
+                content: m.content,
+            }));
+
+            let result: any;
+            try {
+                result = await this.backendClient.query(question, "hybrid", currentNote, history);
+            } catch (httpError: any) {
+                // requestUrl 抛出异常（网络不通等）
+                loadingEl.remove();
+                this.addAssistantMessage("无法连接后端服务，请确认智学后端是否正在运行。\n\n可以在 Obsidian 设置中检查后端状态。");
+                console.error("[ZhiXue] 查询请求失败:", httpError);
+                return;
+            }
+
+            // 移除加载状态
+            loadingEl.remove();
+
+            // 检查后端是否返回了错误
+            if (result.status === "error") {
+                const errorMsg = this.getFriendlyErrorMessage(result.error_type, result.message || result.answer);
+                this.addAssistantMessage(errorMsg);
+                return;
+            }
+
+            // 添加 AI 回复（传入完整 result 以显示 RAG 状态）
+            this.addAssistantMessage(result.answer, result.sources, result);
+
+            // 更新消息列表
+            this.messages.push(
+                { role: "user", content: question, timestamp: new Date().toISOString() },
+                {
+                    role: "assistant",
+                    content: result.answer,
+                    sources: result.sources,
+                    timestamp: new Date().toISOString(),
+                }
+            );
+        } finally {
+            this.isLoading = false;
+        }
+    }
+
+    private getFriendlyErrorMessage(errorType: string | undefined, rawMessage: string): string {
+        switch (errorType) {
+            case "init_timeout":
+                return "RAG 引擎正在初始化中，请等待 30 秒后再试。\n\n首次启动需要加载 AI 依赖，可能需要 1-2 分钟。";
+            case "init_error":
+                return `引擎初始化失败:\n${rawMessage}\n\n请检查 Ollama 是否正在运行，以及所需模型是否已安装。`;
+            case "timeout":
+                return `查询超时:\n${rawMessage}`;
+            case "ollama_connection":
+                return "无法连接 Ollama，请确认 Ollama 是否正在运行。\n\n你可以在终端运行 `ollama list` 检查。";
+            case "model_missing":
+                return rawMessage || "所需模型未找到，请运行 ollama pull 安装。";
+            case "resource_error":
+                return rawMessage || "GPU/内存资源不足，请关闭其他占用资源的程序。";
+            default:
+                return `查询出错了:\n${rawMessage}\n\n请确认后端和 Ollama 是否正常运行。`;
+        }
+    }
+
+    // === UI 辅助 ===
+
+    private addUserMessage(content: string) {
+        const msgEl = this.messagesContainer.createDiv({
+            cls: "zhixue-chat-message zhixue-chat-user",
+        });
+        const headerEl = msgEl.createDiv({ cls: "zhixue-chat-message-header" });
+        headerEl.createSpan({ cls: "zhixue-chat-avatar", text: "👤" });
+        headerEl.createSpan({ cls: "zhixue-chat-name", text: "你" });
+        msgEl.createDiv({ cls: "zhixue-chat-message-body", text: content });
+        this.scrollToBottom();
+    }
+
+    private addAssistantMessage(content: string, sources?: string[], queryResult?: any) {
+        const msgEl = this.messagesContainer.createDiv({
+            cls: "zhixue-chat-message zhixue-chat-assistant",
+        });
+        const headerEl = msgEl.createDiv({ cls: "zhixue-chat-message-header" });
+        headerEl.createSpan({ cls: "zhixue-chat-avatar", text: "🤖" });
+        headerEl.createSpan({ cls: "zhixue-chat-name", text: this.settings.aiName });
+
+        // 显示 RAG 检索状态标签
+        if (queryResult) {
+            const ragStatusEl = headerEl.createSpan({ cls: "zhixue-rag-status" });
+            if (queryResult.context_used === true) {
+                ragStatusEl.setText("📚 知识库");
+                ragStatusEl.addClass("zhixue-rag-active");
+            } else if (queryResult.context_used === false) {
+                ragStatusEl.setText("🌐 通用");
+                ragStatusEl.addClass("zhixue-rag-missing");
+            }
+        }
+
+        // 使用 Obsidian MarkdownRenderer 渲染 Markdown 内容
+        const bodyEl = msgEl.createDiv({ cls: "zhixue-chat-message-body" });
+        const component = new Component();
+        component.load();
+        MarkdownRenderer.render(
+            this.app,
+            content,
+            bodyEl,
+            "",
+            component
+        );
+
+        // 来源引用（暂不显示具体文件，因为 RAG 检索来源可能不准确）
+        // 如需查看检索详情，可展开下方的"检索到 N 个相关实体"调试信息
+        // if (sources && sources.length > 0) {
+        //     const sourcesEl = msgEl.createDiv({ cls: "zhixue-chat-sources" });
+        //     sourcesEl.createSpan({ text: "📎 来源：", cls: "zhixue-sources-label" });
+        //     sources.forEach((source) => {
+        //         const name = source.split("/").pop()?.replace(".md", "") || source;
+        //         const linkEl = sourcesEl.createEl("a", {
+        //             cls: "zhixue-source-link",
+        //             text: name,
+        //         });
+        //         linkEl.addEventListener("click", (e) => {
+        //             e.preventDefault();
+        //             this.app.workspace.openLinkText(name, "", false);
+        //         });
+        //     });
+        // }
+
+        // 显示检索到的实体信息（可折叠）
+        if (queryResult && queryResult.retrieved_entities && queryResult.retrieved_entities.length > 0) {
+            const debugEl = msgEl.createEl("details", { cls: "zhixue-rag-debug" });
+            debugEl.createEl("summary", { text: `🔍 检索到 ${queryResult.retrieved_entities.length} 个相关实体` });
+            const listEl = debugEl.createEl("ul");
+            queryResult.retrieved_entities.slice(0, 10).forEach((entity: string) => {
+                listEl.createEl("li", { text: entity });
+            });
+        }
+
+        this.scrollToBottom();
+    }
+
+
+    private showLoading(): HTMLElement {
+        const loadingEl = this.messagesContainer.createDiv({
+            cls: "zhixue-chat-message zhixue-chat-assistant zhixue-loading",
+        });
+        loadingEl.createSpan({ text: "🤖 " });
+        loadingEl.createSpan({ text: `${this.settings.aiName} 正在思考...` });
+        this.scrollToBottom();
+        return loadingEl;
+    }
+
+    private scrollToBottom() {
+        requestAnimationFrame(() => {
+            this.messagesContainer.scrollTop = this.messagesContainer.scrollHeight;
+        });
+    }
+
+    private getSelectedText(): string {
+        const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+        if (!view) return "";
+        return view.editor.getSelection().trim();
+    }
+
+    private getCurrentNoteTitle(): string {
+        const file = this.app.workspace.getActiveFile();
+        return file?.basename || "";
+    }
+
+    private getCurrentNotePath(): string | undefined {
+        const file = this.app.workspace.getActiveFile();
+        if (!file) return undefined;
+        // @ts-ignore
+        const basePath = this.app.vault.adapter.getBasePath();
+        return `${basePath}/${file.path}`;
+    }
+
+    // === 模型下拉菜单 ===
+
+    private _clickOutsideHandler: ((e: MouseEvent) => void) | null = null;
+
+    private async toggleModelDropdown(anchor: HTMLElement) {
+        // 如果已打开，关闭
+        if (this.dropdownEl) {
+            this.closeModelDropdown();
+            return;
+        }
+
+        // 防御性清理：移除任何残留的下拉菜单 DOM
+        document.querySelectorAll(".zhixue-model-dropdown").forEach(el => el.remove());
+        this.modelsLoading = false;
+
+        const dropdown = document.createElement("div");
+        dropdown.className = "zhixue-model-dropdown";
+        this.dropdownEl = dropdown;
+
+        // 加载中状态
+        dropdown.createDiv({ cls: "zhixue-model-dropdown-loading", text: "正在获取模型列表..." });
+
+        // 渲染到 document.body，脱离 Obsidian 容器的 transform/backdrop-filter 上下文
+        // 这样 position:fixed 就能正常工作，不需要给 leaf 容器设置 overflow:visible
+        document.body.appendChild(dropdown);
+
+        // 用 getBoundingClientRect 计算 fixed 定位坐标
+        const rect = anchor.getBoundingClientRect();
+        dropdown.style.position = "fixed";
+        dropdown.style.right = `${window.innerWidth - rect.right + 8}px`;
+        dropdown.style.top = `${rect.bottom + 4}px`;
+
+        // 点击外部关闭
+        this._clickOutsideHandler = (e: MouseEvent) => {
+            if (!dropdown.contains(e.target as Node) && !anchor.contains(e.target as Node)) {
+                this.closeModelDropdown();
+            }
+        };
+        document.addEventListener("click", this._clickOutsideHandler);
+
+        // 异步加载模型列表
+        this.loadModelsForDropdown(dropdown);
+    }
+
+    private closeModelDropdown() {
+        if (this.dropdownEl) {
+            this.dropdownEl.remove();
+            this.dropdownEl = null;
+        }
+        if (this._clickOutsideHandler) {
+            document.removeEventListener("click", this._clickOutsideHandler);
+            this._clickOutsideHandler = null;
+        }
+    }
+
+    // 云端 API 模型预设（支持 SiliconFlow、OpenRouter、Gemini 等 OpenAI 兼容 API）
+    // 注意：请确认你的 API Key 在对应平台有可用余额/额度
+    private API_MODEL_PRESETS = [
+        { name: "deepseek-ai/DeepSeek-V3", label: "DeepSeek-V3", provider: "SiliconFlow", free: false },
+        { name: "Qwen/Qwen2.5-7B-Instruct", label: "Qwen2.5 7B", provider: "SiliconFlow", free: false },
+        { name: "THUDM/glm-4-9b-chat", label: "GLM-4 9B", provider: "SiliconFlow", free: false },
+        { name: "google/gemini-1.5-flash", label: "Gemini 1.5 Flash", provider: "Google", free: false },
+        { name: "google/gemini-1.5-pro", label: "Gemini 1.5 Pro", provider: "Google", free: false },
+    ];
+
+    private async loadModelsForDropdown(dropdown: HTMLElement) {
+        if (this.modelsLoading) return;
+        this.modelsLoading = true;
+
+        dropdown.empty();
+
+        // 标题
+        dropdown.createDiv({ cls: "zhixue-model-dropdown-title", text: "切换对话模型" });
+
+        const listArea = dropdown.createDiv({ cls: "zhixue-model-dropdown-list" });
+        listArea.createDiv({ cls: "zhixue-model-dropdown-loading", text: "正在获取模型列表..." });
+
+        // 分割线 + 手动输入 + API Key（始终显示）
+        this.appendDropdownFooter(dropdown);
+
+        // 异步加载模型列表
+        try {
+            const currentLLM = this.settings.llmModel;
+
+            listArea.empty();
+
+            // === 免费云端 API 模型区域（始终显示，无需 API Key） ===
+            const apiSection = listArea.createDiv({ cls: "zhixue-model-dropdown-section" });
+            apiSection.createDiv({
+                cls: "zhixue-model-dropdown-section-title",
+                text: "☁️ 免费云端模型（硅基流动）",
+            });
+
+            // 渲染预设免费 API 模型
+            for (const preset of this.API_MODEL_PRESETS) {
+                const isActive = preset.name === currentLLM;
+                const item = apiSection.createDiv({
+                    cls: `zhixue-model-dropdown-item ${isActive ? "zhixue-model-dropdown-item-active" : ""}`,
+                });
+                const nameEl = item.createSpan({ cls: "zhixue-model-dropdown-item-name", text: preset.label });
+                const metaEl = item.createDiv({ cls: "zhixue-model-dropdown-item-meta-row" });
+                metaEl.createSpan({ cls: "zhixue-model-dropdown-item-provider", text: preset.provider });
+                if (isActive) {
+                    item.createSpan({ cls: "zhixue-model-dropdown-item-check", text: "✓" });
+                } else {
+                    item.addEventListener("click", async (e: MouseEvent) => {
+                        e.stopPropagation();
+                        await this.handleApiModelSwitch(preset.name);
+                        this.closeModelDropdown();
+                    });
+                }
+            }
+
+            // 分割线
+            listArea.createDiv({ cls: "zhixue-model-dropdown-divider" });
+
+            // === 自定义 API 模型区域 ===
+            const customModels = this.settings.customApiModels || [];
+            if (customModels.length > 0) {
+                const customSection = listArea.createDiv({ cls: "zhixue-model-dropdown-section" });
+                customSection.createDiv({
+                    cls: "zhixue-model-dropdown-section-title",
+                    text: "📋 我的自定义模型",
+                });
+                for (const custom of customModels) {
+                    const isActive = custom.name === currentLLM;
+                    const item = customSection.createDiv({
+                        cls: `zhixue-model-dropdown-item ${isActive ? "zhixue-model-dropdown-item-active" : ""}`,
+                    });
+                    item.createSpan({ cls: "zhixue-model-dropdown-item-name", text: custom.label });
+                    const metaEl = item.createDiv({ cls: "zhixue-model-dropdown-item-meta-row" });
+                    metaEl.createSpan({ cls: "zhixue-model-dropdown-item-provider", text: custom.provider });
+                    if (isActive) {
+                        item.createSpan({ cls: "zhixue-model-dropdown-item-check", text: "✓" });
+                    } else {
+                        item.addEventListener("click", async (e: MouseEvent) => {
+                            e.stopPropagation();
+                            await this.handleApiModelSwitch(custom.name);
+                            this.closeModelDropdown();
+                        });
+                    }
+                    // 删除按钮
+                    const deleteBtn = item.createEl("button", {
+                        cls: "zhixue-model-dropdown-item-delete",
+                        text: "✕",
+                    });
+                    deleteBtn.addEventListener("click", async (e: MouseEvent) => {
+                        e.stopPropagation();
+                        this.settings.customApiModels = this.settings.customApiModels.filter(m => m.name !== custom.name);
+                        this.saveSettings();
+                        new Notice(`已删除模型 ${custom.label}`);
+                        // 刷新下拉菜单
+                        await this.loadModelsForDropdown(dropdown);
+                    });
+                }
+                listArea.createDiv({ cls: "zhixue-model-dropdown-divider" });
+            }
+
+            // === 本地 Ollama 模型区域 ===
+            const ollamaSection = listArea.createDiv({ cls: "zhixue-model-dropdown-section" });
+            ollamaSection.createDiv({
+                cls: "zhixue-model-dropdown-section-title",
+                text: "💻 本地 Ollama 模型",
+            });
+
+            try {
+                const data = await this.backendClient.listModels();
+
+            if (!data.ollama_running) {
+                ollamaSection.createDiv({
+                    cls: "zhixue-model-dropdown-empty",
+                    text: "Ollama 未连接，本地模型不可用",
+                });
+                this.modelsLoading = false;
+                return;
+            }
+
+                const models = data.models || [];
+
+                // 过滤出 LLM 模型
+                const llmModels = models.filter(
+                    m => !m.name.includes("embed") && !m.name.includes("e5") && !m.name.includes("bge")
+                );
+
+                if (llmModels.length === 0) {
+                    ollamaSection.createDiv({
+                        cls: "zhixue-model-dropdown-empty",
+                        text: "未找到已安装的对话模型",
+                    });
+                } else {
+                    for (const model of llmModels) {
+                        const isActive = model.name === currentLLM;
+                        const item = ollamaSection.createDiv({
+                            cls: `zhixue-model-dropdown-item ${isActive ? "zhixue-model-dropdown-item-active" : ""}`,
+                        });
+                        item.createSpan({ cls: "zhixue-model-dropdown-item-name", text: model.name });
+                        if (isActive) {
+                            item.createSpan({ cls: "zhixue-model-dropdown-item-check", text: "✓" });
+                        } else {
+                            const metaRow = item.createDiv({ cls: "zhixue-model-dropdown-item-meta-row" });
+                            if (model.size_gb > 0) {
+                                metaRow.createSpan({ cls: "zhixue-model-dropdown-item-meta", text: `${model.size_gb} GB` });
+                            }
+                            metaRow.createSpan({ cls: "zhixue-model-dropdown-item-provider", text: "本地" });
+                            item.addEventListener("click", async (e: MouseEvent) => {
+                                e.stopPropagation();
+                                await this.handleModelSwitch(model.name);
+                                this.closeModelDropdown();
+                            });
+                        }
+                    }
+                }
+            } catch {
+                ollamaSection.createDiv({
+                    cls: "zhixue-model-dropdown-empty",
+                    text: "⚠️ 后端未运行，仅可手动输入模型",
+                });
+            }
+
+        } finally {
+            this.modelsLoading = false;
+        }
+    }
+
+    private appendDropdownFooter(dropdown: HTMLElement) {
+        // 分割线
+        dropdown.createDiv({ cls: "zhixue-model-dropdown-divider" });
+
+        // 添加自定义模型按钮
+        const addItem = dropdown.createDiv({ cls: "zhixue-model-dropdown-item zhixue-model-dropdown-add-item" });
+        addItem.createSpan({ cls: "zhixue-model-dropdown-item-icon", text: "➕" });
+        addItem.createSpan({ cls: "zhixue-model-dropdown-item-name", text: "添加自定义模型" });
+        addItem.addEventListener("click", (e: MouseEvent) => {
+            e.stopPropagation();
+            this.showAddModelDialog(dropdown);
+        });
+
+        // 分割线
+        dropdown.createDiv({ cls: "zhixue-model-dropdown-divider" });
+
+        // 手动输入模型名（直接切换，不保存）
+        const customRow = dropdown.createDiv({ cls: "zhixue-model-dropdown-custom" });
+        const customInput = customRow.createEl("input", {
+            cls: "zhixue-model-dropdown-custom-input",
+            attr: { type: "text", placeholder: "输入模型名称..." },
+        });
+        const customBtn = customRow.createEl("button", {
+            cls: "zhixue-model-dropdown-custom-btn",
+            text: "切换",
+        });
+        customBtn.addEventListener("click", async (e: MouseEvent) => {
+            e.stopPropagation();
+            const name = customInput.value.trim();
+            if (name) {
+                await this.handleModelSwitch(name);
+                this.closeModelDropdown();
+            }
+        });
+        customInput.addEventListener("keydown", async (e: KeyboardEvent) => {
+            if (e.key === "Enter") {
+                e.stopPropagation();
+                const name = customInput.value.trim();
+                if (name) {
+                    await this.handleModelSwitch(name);
+                    this.closeModelDropdown();
+                }
+            }
+            e.stopPropagation();
+        });
+        customInput.addEventListener("click", (e: MouseEvent) => e.stopPropagation());
+
+        // 分割线
+        dropdown.createDiv({ cls: "zhixue-model-dropdown-divider" });
+
+        // 配置 API Key 入口
+        const settingsItem = dropdown.createDiv({ cls: "zhixue-model-dropdown-item zhixue-model-dropdown-settings" });
+        settingsItem.createSpan({ cls: "zhixue-model-dropdown-item-icon", text: "🔑" });
+        settingsItem.createSpan({ cls: "zhixue-model-dropdown-item-name", text: "配置 API Key" });
+        settingsItem.addEventListener("click", (e: MouseEvent) => {
+            e.stopPropagation();
+            this.closeModelDropdown();
+            // 打开设置面板
+            // @ts-ignore
+            this.app.setting.open();
+            // 延迟滚动到 API Key 位置并高亮
+            setTimeout(() => {
+                const apiSection = document.querySelector('.setting-item[data-id="api-key"]')
+                    || Array.from(document.querySelectorAll('.setting-item')).find(el =>
+                        el.textContent?.includes("API Key")
+                    );
+                if (apiSection) {
+                    apiSection.scrollIntoView({ behavior: "smooth", block: "center" });
+                    (apiSection as HTMLElement).style.transition = "background 0.3s";
+                    (apiSection as HTMLElement).style.background = "rgba(0, 122, 255, 0.08)";
+                    setTimeout(() => {
+                        (apiSection as HTMLElement).style.background = "";
+                    }, 1500);
+                }
+            }, 300);
+        });
+    }
+
+    /**
+     * 弹出添加自定义模型的对话框
+     */
+    private showAddModelDialog(dropdown: HTMLElement) {
+        // 关闭下拉菜单
+        this.closeModelDropdown();
+
+        // 创建模态对话框
+        const modal = document.body.createDiv({ cls: "zhixue-add-model-modal-overlay" });
+
+        const dialog = modal.createDiv({ cls: "zhixue-add-model-dialog" });
+        dialog.createEl("h3", { text: "添加自定义模型" });
+
+        // 模型名称
+        dialog.createEl("label", { text: "模型名称（必填）" });
+        const nameInput = dialog.createEl("input", {
+            cls: "zhixue-add-model-input",
+            attr: { type: "text", placeholder: "例如: deepseek-ai/DeepSeek-V3" },
+        });
+        const nameHint = dialog.createEl("p", { cls: "zhixue-add-model-hint" });
+        nameHint.innerHTML = '模型名称格式通常为 <code>提供商/模型名</code>，例如 <code>deepseek-ai/DeepSeek-V3</code>、<code>google/gemini-1.5-flash</code>';
+
+        // 显示标签
+        dialog.createEl("label", { text: "显示名称（选填）" });
+        const labelInput = dialog.createEl("input", {
+            cls: "zhixue-add-model-input",
+            attr: { type: "text", placeholder: "例如: DeepSeek V3（不填则自动截取）" },
+        });
+
+        // API 地址
+        dialog.createEl("label", { text: "API 地址（选填）" });
+        const urlInput = dialog.createEl("input", {
+            cls: "zhixue-add-model-input",
+            attr: { type: "text", placeholder: `默认: ${this.settings.llmBaseUrl || "https://api.siliconflow.cn/v1"}` },
+        });
+
+        // 按钮行
+        const btnRow = dialog.createDiv({ cls: "zhixue-add-model-btn-row" });
+        const cancelBtn = btnRow.createEl("button", { cls: "zhixue-add-model-btn zhixue-add-model-btn-cancel", text: "取消" });
+        const addBtn = btnRow.createEl("button", { cls: "zhixue-add-model-btn zhixue-add-model-btn-confirm", text: "添加" });
+
+        cancelBtn.addEventListener("click", () => modal.remove());
+        modal.addEventListener("click", (e) => { if (e.target === modal) modal.remove(); });
+
+        addBtn.addEventListener("click", () => {
+            const name = nameInput.value.trim();
+            if (!name) {
+                new Notice("请输入模型名称");
+                nameInput.focus();
+                return;
+            }
+            // 检查重复
+            const allModels = [
+                ...this.API_MODEL_PRESETS,
+                ...(this.settings.customApiModels || []),
+            ];
+            if (allModels.some(m => m.name === name)) {
+                new Notice("该模型已存在");
+                return;
+            }
+            // 自动生成标签
+            const label = labelInput.value.trim() || name.split("/").pop() || name;
+            // 检测 provider
+            const provider = this.detectProvider(name);
+
+            // 保存
+            if (!this.settings.customApiModels) this.settings.customApiModels = [];
+            this.settings.customApiModels.push({ name, label, provider });
+            this.saveSettings();
+
+            // 如果用户指定了 API 地址，同步到设置
+            const customUrl = urlInput.value.trim();
+            if (customUrl) {
+                this.settings.llmBaseUrl = customUrl;
+                this.saveSettings();
+            }
+
+            new Notice(`已添加模型 ${label}`);
+            modal.remove();
+        });
+
+        nameInput.focus();
+        nameInput.addEventListener("keydown", (e) => {
+            if (e.key === "Enter") addBtn.click();
+            e.stopPropagation();
+        });
+    }
+
+    /**
+     * 根据模型名自动检测提供商
+     */
+    private detectProvider(modelName: string): string {
+        const lower = modelName.toLowerCase();
+        if (lower.includes("deepseek")) return "DeepSeek";
+        if (lower.includes("qwen")) return "通义千问";
+        if (lower.includes("glm") || lower.includes("chatglm")) return "智谱 GLM";
+        if (lower.includes("internlm") || lower.includes("intern")) return "书生浦语";
+        if (lower.includes("mistral")) return "Mistral";
+        if (lower.includes("yi-")) return "零一万物";
+        if (lower.includes("llama")) return "Meta LLaMA";
+        if (lower.includes("gpt") || lower.includes("openai")) return "OpenAI";
+        if (lower.includes("claude") || lower.includes("anthropic")) return "Anthropic";
+        if (lower.includes("gemini") || lower.includes("google")) return "Google";
+        return "自定义";
+    }
+
+    private async handleModelSwitch(modelName: string) {
+        try {
+            const result = await this.backendClient.switchModel("llm", modelName);
+            if (result.status === "ok") {
+                this.settings.llmModel = modelName;
+                this.updateModelIndicator(modelName);
+                new Notice(`已切换为 ${modelName}`);
+            } else {
+                new Notice(`切换失败：${result.message}`);
+            }
+        } catch (e) {
+            new Notice("切换模型失败，请确认后端是否运行");
+            console.error("[ZhiXue] 切换模型失败:", e);
+        }
+    }
+
+    /**
+     * 切换免费云端 API 模型（硅基流动）
+     * 免费模型需要 API Key（注册即送），但不消耗余额
+     */
+    private async handleApiModelSwitch(modelName: string) {
+        // 从激活的 API Profile 读取凭证（新多 Profile 系统）
+        const activeProfile = this.settings.apiProfiles.find(p => p.isActive);
+
+        if (!activeProfile || !activeProfile.apiKey) {
+                new Notice("请先在设置中配置云端 API Key（SiliconFlow、OpenRouter、Gemini 等）");
+                this.closeModelDropdown();
+                // 打开设置并跳转到 API Key
+                setTimeout(() => {
+                    (this.app as any).setting.open();
+                    // 延迟滚动到 API Key 位置
+                    setTimeout(() => {
+                        const container = (this.app as any).setting.containerEl || (this.app as any).setting.selfEl;
+                        const el = container.querySelector('[data-id="api-key"]');
+                        if (el) {
+                            el.scrollIntoView({ behavior: "smooth", block: "center" });
+                            (el as HTMLElement).style.outline = "2px solid #e74c3c";
+                            setTimeout(() => { (el as HTMLElement).style.outline = ""; }, 2000);
+                        }
+                    }, 300);
+                }, 100);
+                return;
+            }
+
+        try {
+            // 使用激活 Profile 的凭证
+            const baseUrl = activeProfile.baseUrl;
+            const apiKey = activeProfile.apiKey;
+
+            // 1. 同步 API 地址和 Key 到后端
+            await this.backendClient.updateConfig({
+                llm_base_url: baseUrl,
+                llm_api_key: apiKey,
+            });
+
+            // 同步保存到前端设置（兼容旧逻辑）
+            this.settings.llmBaseUrl = baseUrl;
+            this.settings.llmApiKey = apiKey;
+            this.saveSettings();
+
+            // 2. 切换模型名
+            const result = await this.backendClient.switchModel("llm", modelName);
+            if (result.status === "ok") {
+                this.settings.llmModel = modelName;
+                this.updateModelIndicator(modelName);
+                new Notice(`已切换为免费云端模型 ${modelName}`);
+            } else {
+                new Notice(`切换失败：${result.message}`);
+            }
+        } catch (e) {
+            new Notice("切换模型失败，请确认后端是否运行");
+            console.error("[ZhiXue] 切换免费模型失败:", e);
+        }
+    }
+
+    private updateModelIndicator(modelName: string) {
+        const indicator = this.containerEl.querySelector(".zhixue-model-indicator");
+        if (indicator) {
+            // 判断是否为 API 模型（包含 / 的一般是云模型）
+            const isApiModel = modelName.includes("/");
+            const icon = isApiModel ? "☁️" : "🧠";
+            indicator.setText(`${icon} ${modelName}`);
+        }
+    }
+}

@@ -1,0 +1,281 @@
+/**
+ * 智学 (ZhiXue) - Obsidian 插件主入口
+ * RAG-Anything 驱动的 AI 知识助手
+ */
+
+import { Notice, Plugin } from "obsidian";
+import { DEFAULT_SETTINGS, CHAT_VIEW_TYPE, DASHBOARD_VIEW_TYPE, MODEL_SWITCH_VIEW_TYPE, type ZhiXueSettings } from "./utils/constants";
+import { ProcessManager } from "./services/ProcessManager";
+import { BackendClient } from "./services/BackendClient";
+import { ConversationStore } from "./services/ConversationStore";
+import { VaultWatcher } from "./services/VaultWatcher";
+import { ChatView } from "./views/ChatView";
+import { DashboardView } from "./views/DashboardView";
+import { ModelSwitchView } from "./views/ModelSwitchView";
+import { ZhiXueSettingTab } from "./settings";
+
+export default class ZhiXuePlugin extends Plugin {
+    settings!: ZhiXueSettings;
+    processManager!: ProcessManager;
+    backendClient!: BackendClient;
+    conversationStore!: ConversationStore;
+    vaultWatcher!: VaultWatcher;
+
+    async onload() {
+        console.log("[ZhiXue] ========== 版本 v0.1.3 ==========");
+        console.log("[ZhiXue] 智学插件加载中...");
+
+        // 加载设置
+        await this.loadSettings();
+
+        // 迁移旧配置：如果 apiProfiles 为空但旧字段有值，自动迁移
+        if (this.settings.apiProfiles.length === 0 && this.settings.llmApiKey) {
+            console.log("[ZhiXue] 迁移旧 API 配置到多 Profile 格式");
+            this.settings.apiProfiles.push({
+                id: Date.now().toString(36) + Math.random().toString(36).slice(2, 8),
+                name: "迁移自旧配置",
+                baseUrl: this.settings.llmBaseUrl || "https://api.siliconflow.cn/v1",
+                apiKey: this.settings.llmApiKey,
+                isActive: true,
+            });
+            // 清空旧字段，避免重复迁移
+            this.settings.llmBaseUrl = "";
+            this.settings.llmApiKey = "";
+            await this.saveSettings();
+        }
+
+        // 初始化服务
+        this.backendClient = new BackendClient(this.settings.backendPort);
+        this.conversationStore = new ConversationStore(this.app, this.settings.conversationPath);
+        // ProcessManager 自己会找到正确的插件目录，不再依赖 getPluginDir()
+        this.processManager = new ProcessManager(this.settings.backendPort, this);
+        this.vaultWatcher = new VaultWatcher(this.app, this, this.backendClient);
+
+        // 注册视图
+        this.registerView(CHAT_VIEW_TYPE, (leaf) => {
+            return new ChatView(leaf, this.settings, this.backendClient, this.conversationStore, () => this.saveSettings());
+        });
+
+        this.registerView(DASHBOARD_VIEW_TYPE, (leaf) => {
+            return new DashboardView(leaf, this.settings, this.backendClient, this.conversationStore);
+        });
+
+        this.registerView(MODEL_SWITCH_VIEW_TYPE, (leaf) => {
+            return new ModelSwitchView(leaf, this.settings, this.backendClient, this);
+        });
+
+        // 注册设置面板
+        this.addSettingTab(new ZhiXueSettingTab(this.app, this));
+
+        // 注册 Ribbon 图标
+        if (this.settings.showRibbonIcon) {
+            this.addRibbonIcon("brain", "智学 AI 助手", () => {
+                this.activateChat();
+            });
+        }
+
+        // 注册命令
+        this.addCommand({
+            id: "open-chat",
+            name: "打开智学聊天",
+            callback: () => this.activateChat(),
+        });
+
+        this.addCommand({
+            id: "open-dashboard",
+            name: "打开智学首页",
+            callback: () => this.activateDashboard(),
+        });
+
+        this.addCommand({
+            id: "switch-model",
+            name: "切换 AI 模型",
+            callback: () => this.activateModelSwitch(),
+        });
+
+        this.addCommand({
+            id: "explain-selection",
+            name: "解释选中内容",
+            callback: () => this.quickAction("explain"),
+        });
+
+        this.addCommand({
+            id: "find-related",
+            name: "查找相关笔记",
+            callback: () => this.quickAction("related"),
+        });
+
+        this.addCommand({
+            id: "summarize-note",
+            name: "总结当前笔记",
+            callback: () => this.quickAction("summarize"),
+        });
+
+        this.addCommand({
+            id: "deep-question",
+            name: "深度提问",
+            callback: () => this.quickAction("deep-question"),
+        });
+
+        this.addCommand({
+            id: "reindex-vault",
+            name: "重新索引 Vault",
+            callback: async () => {
+                new Notice("智学：开始重新索引...");
+                try {
+                    const result = await this.backendClient.ingestVault(true);
+                    new Notice(`智学：索引完成，处理了 ${result.files_processed} 个文件`);
+                } catch {
+                    new Notice("智学：索引失败");
+                }
+            },
+        });
+
+        // 自动启动后端（后台非阻塞，避免 Obsidian 报加载超时）
+        if (this.settings.autoStartBackend) {
+            this.processManager.start().then((success) => {
+                if (success) {
+                    new Notice("智学：后端已启动");
+                    // 后端就绪后同步前端设置
+                    this.syncSettingsToBackend();
+                } else {
+                    new Notice("智学：后端启动失败，请检查 _zhixue/error.log", 8000);
+                }
+            });
+        } else {
+            // 不自动启动时，也尝试同步设置（可能后端已由用户手动启动）
+            setTimeout(() => this.syncSettingsToBackend(), 500);
+        }
+
+        // 注册文件监听
+        this.vaultWatcher.register();
+
+        // 状态栏
+        const statusItem = this.addStatusBarItem();
+        statusItem.setText("智学 ●");
+        statusItem.addClass("zhixue-status");
+
+        console.log("[ZhiXue] 智学插件加载完成！");
+    }
+
+    async onunload() {
+        console.log("[ZhiXue] 智学插件卸载中...");
+
+        // 停止后端
+        this.processManager.stop();
+
+        console.log("[ZhiXue] 智学插件已卸载");
+    }
+
+    async loadSettings() {
+        this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    }
+
+    async saveSettings() {
+        await this.saveData(this.settings);
+        // 更新服务配置
+        this.backendClient.updatePort(this.settings.backendPort);
+        this.processManager.updatePort(this.settings.backendPort);
+        this.conversationStore.updatePath(this.settings.conversationPath);
+    }
+
+    // === 视图激活 ===
+
+    async activateChat() {
+        const existing = this.app.workspace.getLeavesOfType(CHAT_VIEW_TYPE);
+        if (existing.length > 0) {
+            this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        const leaf = this.app.workspace.getRightLeaf(false);
+        if (leaf) {
+            await leaf.setViewState({ type: CHAT_VIEW_TYPE, active: true });
+            this.app.workspace.revealLeaf(leaf);
+        }
+    }
+
+    async activateDashboard() {
+        const existing = this.app.workspace.getLeavesOfType(DASHBOARD_VIEW_TYPE);
+        if (existing.length > 0) {
+            this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        const leaf = this.app.workspace.getLeaf(true);
+        if (leaf) {
+            await leaf.setViewState({ type: DASHBOARD_VIEW_TYPE, active: true });
+        }
+    }
+
+    async activateModelSwitch() {
+        const existing = this.app.workspace.getLeavesOfType(MODEL_SWITCH_VIEW_TYPE);
+        if (existing.length > 0) {
+            this.app.workspace.revealLeaf(existing[0]);
+            return;
+        }
+        const leaf = this.app.workspace.getRightLeaf(false);
+        if (leaf) {
+            await leaf.setViewState({ type: MODEL_SWITCH_VIEW_TYPE, active: true });
+            this.app.workspace.revealLeaf(leaf);
+        }
+    }
+
+    // === 快捷操作 ===
+
+    private async quickAction(action: string) {
+        // 先确保聊天视图打开
+        await this.activateChat();
+
+        const view = this.app.workspace.getActiveViewOfType(ChatView) ||
+                     this.app.workspace.getLeavesOfType(CHAT_VIEW_TYPE)[0]?.view;
+
+        if (view instanceof ChatView) {
+            switch (action) {
+                case "explain":
+                    await view.handleExplain();
+                    break;
+                case "related":
+                    await view.handleRelated();
+                    break;
+                case "summarize":
+                    await view.handleSummarize();
+                    break;
+                case "deep-question":
+                    await view.handleDeepQuestion();
+                    break;
+            }
+        }
+    }
+
+    // === 工具方法 ===
+
+    /**
+     * 将前端设置同步到后端（API Key、Ollama 地址）
+     * 优先使用激活的 API Profile，回退到旧字段
+     * 后端重启后配置会重置为默认值，需要重新同步
+     */
+    async syncSettingsToBackend() {
+        const activeProfile = this.settings.apiProfiles.find(p => p.isActive);
+        const embeddingBaseUrl = this.settings.embeddingSource === "cloud"
+            ? this.settings.embeddingBaseUrl
+            : "";
+        const embeddingApiKey = this.settings.embeddingSource === "cloud"
+            ? this.settings.embeddingApiKey
+            : "";
+        try {
+            await this.backendClient.updateConfig({
+                ollama_api_key: this.settings.ollamaApiKey,
+                ollama_base_url: this.settings.ollamaUrl,
+                llm_api_key: activeProfile?.apiKey || this.settings.llmApiKey || "",
+                llm_base_url: activeProfile?.baseUrl || this.settings.llmBaseUrl || "",
+                llm_model: this.settings.llmModel || undefined,
+                embedding_base_url: embeddingBaseUrl,
+                embedding_api_key: embeddingApiKey,
+                embedding_source: this.settings.embeddingSource,
+            });
+            console.log("[ZhiXue] 设置已同步到后端");
+        } catch {
+            console.warn("[ZhiXue] 同步设置到后端失败");
+        }
+    }
+
+}

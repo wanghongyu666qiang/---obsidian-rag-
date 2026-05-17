@@ -1,0 +1,232 @@
+/**
+ * 智学 (ZhiXue) - 后端通信客户端
+ * 通过 Obsidian requestUrl 与 FastAPI 后端通信
+ */
+
+import { requestUrl } from "obsidian";
+import type { QueryResult, SystemStatus, AIProfileData, HabitData } from "../utils/constants";
+
+export class BackendClient {
+    private baseUrl: string;
+
+    constructor(port: number) {
+        this.baseUrl = `http://127.0.0.1:${port}`;
+    }
+
+    updatePort(port: number) {
+        this.baseUrl = `http://127.0.0.1:${port}`;
+    }
+
+    // === 系统状态 ===
+
+    async checkHealth(): Promise<boolean> {
+        try {
+            const r = await requestUrl({
+                url: `${this.baseUrl}/api/system/status`,
+                method: "GET",
+                throw: false,
+            });
+            return r.status === 200;
+        } catch {
+            return false;
+        }
+    }
+
+    async getSystemStatus(): Promise<SystemStatus | null> {
+        try {
+            const r = await requestUrl({
+                url: `${this.baseUrl}/api/system/status`,
+                method: "GET",
+                throw: false,
+            });
+            if (r.status === 200) return r.json;
+            return null;
+        } catch {
+            return null;
+        }
+    }
+
+    async getSystemConfig(): Promise<any> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/system/config`,
+            method: "GET",
+        });
+        return r.json;
+    }
+
+    // === 对话 ===
+
+    async query(
+        question: string,
+        mode: string = "hybrid",
+        currentNote?: string,
+        history?: Array<{ role: string; content: string }>
+    ): Promise<QueryResult> {
+        const body: Record<string, any> = {
+            question,
+            mode,
+            current_note: currentNote,
+        };
+        if (history && history.length > 0) {
+            body.history = history;
+        }
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/chat/query`,
+            method: "POST",
+            contentType: "application/json",
+            body: JSON.stringify(body),
+        });
+        return r.json;
+    }
+
+    // === 文档摄取 ===
+
+    async ingestFile(filePath: string): Promise<any> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/ingest/file`,
+            method: "POST",
+            contentType: "application/json",
+            body: JSON.stringify({ file_path: filePath }),
+        });
+        return r.json;
+    }
+
+    async ingestVault(force: boolean = false): Promise<any> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/ingest/vault`,
+            method: "POST",
+            contentType: "application/json",
+            body: JSON.stringify({ force }),
+        });
+        return r.json;
+    }
+
+    async getIngestStatus(): Promise<any> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/ingest/status`,
+            method: "GET",
+        });
+        return r.json;
+    }
+
+    // === AI 印象 ===
+
+    async getProfile(): Promise<AIProfileData> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/profile`,
+            method: "GET",
+        });
+        return r.json;
+    }
+
+    async updateProfile(content: string): Promise<any> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/profile`,
+            method: "PUT",
+            contentType: "application/json",
+            body: JSON.stringify({ content }),
+        });
+        return r.json;
+    }
+
+    // === 使用习惯 ===
+
+    async getHabits(): Promise<HabitData> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/habits`,
+            method: "GET",
+        });
+        return r.json;
+    }
+
+    async getRecommendations(currentNote?: string): Promise<any> {
+        const url = currentNote
+            ? `${this.baseUrl}/api/habits/recommendations?current_note=${encodeURIComponent(currentNote)}`
+            : `${this.baseUrl}/api/habits/recommendations`;
+        const r = await requestUrl({ url, method: "GET" });
+        return r.json;
+    }
+
+    async getFrequentTopics(topK: number = 10): Promise<any> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/habits/topics?top_k=${topK}`,
+            method: "GET",
+        });
+        return r.json;
+    }
+
+    // === 系统检查 ===
+
+    async checkOllamaModels(): Promise<{
+        ollama_running: boolean;
+        llm_model: { name: string; installed: boolean };
+        embedding_model: { name: string; installed: boolean };
+        instructions: string[];
+    }> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/system/check-models`,
+            method: "GET",
+            throw: false,
+        });
+        return r.json;
+    }
+
+    // === 模型管理 ===
+
+    async listModels(): Promise<{
+        ollama_running: boolean;
+        models: Array<{ name: string; size_gb: number; modified: string }>;
+        current_llm: string;
+        current_embedding: string;
+        error?: string;
+    }> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/system/list-models`,
+            method: "GET",
+            throw: false,
+        });
+        return r.json;
+    }
+
+    async switchModel(
+        modelType: "llm" | "embedding",
+        modelName: string,
+        embeddingDim?: number
+    ): Promise<{ status: string; active_model: string; message: string }> {
+        const body: Record<string, any> = {
+            model_type: modelType,
+            model_name: modelName,
+        };
+        if (embeddingDim !== undefined) {
+            body.embedding_dim = embeddingDim;
+        }
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/system/switch-model`,
+            method: "PUT",
+            contentType: "application/json",
+            body: JSON.stringify(body),
+        });
+        return r.json;
+    }
+
+    // === 配置更新 ===
+
+    async updateConfig(config: {
+        ollama_api_key?: string;
+        ollama_base_url?: string;
+        llm_api_key?: string;
+        llm_base_url?: string;
+        llm_model?: string;
+        embedding_base_url?: string;
+        embedding_api_key?: string;
+        embedding_source?: string;
+    }): Promise<{ status: string; updated: string[]; config: any }> {
+        const r = await requestUrl({
+            url: `${this.baseUrl}/api/system/update-config`,
+            method: "PUT",
+            contentType: "application/json",
+            body: JSON.stringify(config),
+        });
+        return r.json;
+    }
+}

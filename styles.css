@@ -1,0 +1,1336 @@
+/* ====================================
+   智学 (ZhiXue) - Apple Style
+   ==================================== */
+
+/* 确保侧边栏 leaf 容器正常裁剪（下拉菜单通过 document.body 渲染，不需要 overflow:visible） */
+
+/* === 设计令牌 === */
+:root {
+    --zhixue-primary: #007AFF;
+    --zhixue-primary-hover: #0056CC;
+    --zhixue-primary-bg: rgba(0, 122, 255, 0.08);
+    --zhixue-success: #34C759;
+    --zhixue-success-bg: rgba(52, 199, 89, 0.08);
+    --zhixue-warning: #FF9F0A;
+    --zhixue-warning-bg: rgba(255, 159, 10, 0.08);
+    --zhixue-danger: #FF3B30;
+
+    --zhixue-bg: var(--background-secondary);
+    --zhixue-bg-elevated: var(--background-primary);
+    --zhixue-text: var(--text-normal);
+    --zhixue-text-secondary: var(--text-muted);
+    --zhixue-border: var(--background-modifier-border);
+    --zhixue-fill: var(--background-modifier-border);
+    --zhixue-fill-hover: rgba(0, 0, 0, 0.04);
+
+    --zhixue-user-bubble: #007AFF;
+    --zhixue-user-text: #FFFFFF;
+    --zhixue-assistant-bg: rgba(0, 0, 0, 0.03);
+
+    --zhixue-radius-sm: 8px;
+    --zhixue-radius: 12px;
+    --zhixue-radius-lg: 16px;
+    --zhixue-radius-xl: 20px;
+
+    --zhixue-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.04);
+    --zhixue-shadow: 0 2px 8px rgba(0, 0, 0, 0.06), 0 0 1px rgba(0, 0, 0, 0.08);
+    --zhixue-shadow-lg: 0 4px 16px rgba(0, 0, 0, 0.08), 0 0 1px rgba(0, 0, 0, 0.1);
+
+    --zhixue-transition: 0.2s cubic-bezier(0.25, 0.1, 0.25, 1);
+    --zhixue-transition-spring: 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* =========================================
+   聊天视图
+   ========================================= */
+
+.zhixue-chat-header {
+    display: flex;
+    align-items: center;
+    padding: 10px 16px;
+    border-bottom: 0.5px solid var(--zhixue-border);
+    font-weight: 600;
+    font-size: 13px;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background: var(--zhixue-bg-elevated);
+    position: relative;
+    flex-shrink: 0;
+}
+
+.zhixue-chat-title {
+    color: var(--zhixue-text);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.zhixue-chat-messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    min-height: 0;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+.zhixue-chat-messages:hover {
+    scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+/* --- 消息气泡 --- */
+.zhixue-chat-message {
+    padding: 10px 14px;
+    border-radius: var(--zhixue-radius);
+    max-width: 88%;
+    word-wrap: break-word;
+    line-height: 1.55;
+    transition: transform var(--zhixue-transition);
+    animation: zhixue-msg-in 0.25s var(--zhixue-transition-spring);
+}
+
+@keyframes zhixue-msg-in {
+    from { opacity: 0; transform: translateY(6px) scale(0.97); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.zhixue-chat-user {
+    background: var(--zhixue-user-bubble);
+    color: var(--zhixue-user-text);
+    align-self: flex-end;
+    border-bottom-right-radius: 4px;
+    box-shadow: 0 1px 4px rgba(0, 122, 255, 0.2);
+}
+
+.zhixue-chat-assistant {
+    background: var(--zhixue-assistant-bg);
+    align-self: flex-start;
+    border-bottom-left-radius: 4px;
+    box-shadow: var(--zhixue-shadow-sm);
+}
+
+.zhixue-chat-message-header {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin-bottom: 4px;
+    font-size: 11px;
+    opacity: 0.55;
+}
+
+.zhixue-chat-avatar {
+    font-size: 13px;
+}
+
+.zhixue-chat-name {
+    font-weight: 600;
+}
+
+.zhixue-chat-message-body {
+    font-size: 13.5px;
+    white-space: pre-wrap;
+    line-height: 1.6;
+}
+
+/* --- Markdown 渲染 --- */
+.zhixue-chat-message-body p {
+    margin: 0 0 6px 0;
+}
+
+.zhixue-chat-message-body p:last-child {
+    margin-bottom: 0;
+}
+
+.zhixue-chat-message-body code {
+    background: rgba(0, 0, 0, 0.06);
+    padding: 1.5px 5px;
+    border-radius: 5px;
+    font-size: 12.5px;
+}
+
+.zhixue-chat-message-body pre {
+    background: rgba(0, 0, 0, 0.04);
+    padding: 10px 14px;
+    border-radius: var(--zhixue-radius-sm);
+    overflow-x: auto;
+    margin: 8px 0;
+    border: 0.5px solid var(--zhixue-border);
+}
+
+.zhixue-chat-message-body pre code {
+    background: none;
+    padding: 0;
+}
+
+.zhixue-chat-message-body ul,
+.zhixue-chat-message-body ol {
+    padding-left: 20px;
+    margin: 4px 0;
+}
+
+.zhixue-chat-message-body blockquote {
+    border-left: 2.5px solid var(--zhixue-primary);
+    padding-left: 10px;
+    margin: 8px 0;
+    color: var(--zhixue-text-secondary);
+}
+
+.zhixue-chat-message-body h1,
+.zhixue-chat-message-body h2,
+.zhixue-chat-message-body h3 {
+    margin: 8px 0 4px 0;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+
+.zhixue-chat-message-body a {
+    color: var(--zhixue-primary);
+    text-decoration: none;
+}
+
+.zhixue-chat-message-body a:hover {
+    text-decoration: underline;
+}
+
+/* --- 来源 --- */
+.zhixue-chat-sources {
+    margin-top: 6px;
+    padding-top: 6px;
+    border-top: 0.5px solid var(--zhixue-border);
+    font-size: 11px;
+    color: var(--zhixue-text-secondary);
+}
+
+.zhixue-source-link {
+    color: var(--zhixue-primary);
+    cursor: pointer;
+    margin-right: 6px;
+    text-decoration: none;
+    font-size: 11px;
+}
+
+.zhixue-source-link:hover {
+    text-decoration: underline;
+}
+
+.zhixue-loading {
+    opacity: 0.5;
+    font-style: italic;
+    color: var(--zhixue-text-secondary);
+}
+
+/* --- 快捷操作 (Pill 形状) --- */
+.zhixue-quick-actions {
+    display: flex;
+    gap: 6px;
+    padding: 8px 16px;
+    border-top: 0.5px solid var(--zhixue-border);
+    overflow-x: auto;
+    background: var(--zhixue-bg-elevated);
+    flex-shrink: 0;
+}
+
+.zhixue-quick-action-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 5px 12px;
+    border-radius: 100px;
+    border: none;
+    background: var(--zhixue-fill);
+    color: var(--zhixue-text);
+    cursor: pointer;
+    font-size: 12px;
+    white-space: nowrap;
+    transition: all var(--zhixue-transition);
+    font-weight: 500;
+}
+
+.zhixue-quick-action-btn:hover {
+    background: var(--zhixue-primary);
+    color: white;
+    transform: scale(1.03);
+}
+
+.zhixue-quick-action-btn:active {
+    transform: scale(0.97);
+}
+
+/* --- 输入区 --- */
+.zhixue-chat-input-container {
+    display: flex;
+    gap: 8px;
+    padding: 10px 16px;
+    border-top: 0.5px solid var(--zhixue-border);
+    align-items: flex-end;
+    background: var(--zhixue-bg-elevated);
+    flex-shrink: 0;
+}
+
+.zhixue-chat-input {
+    flex: 1;
+    padding: 9px 14px;
+    border-radius: var(--zhixue-radius);
+    border: 0.5px solid var(--zhixue-border);
+    background: var(--zhixue-bg);
+    color: var(--zhixue-text);
+    font-size: 13.5px;
+    resize: none;
+    outline: none;
+    font-family: inherit;
+    transition: all var(--zhixue-transition);
+    line-height: 1.45;
+}
+
+.zhixue-chat-input:focus {
+    border-color: var(--zhixue-primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+}
+
+.zhixue-chat-send-btn {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    border: none;
+    background: var(--zhixue-primary);
+    color: white;
+    cursor: pointer;
+    font-size: 14px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all var(--zhixue-transition);
+    box-shadow: 0 1px 4px rgba(0, 122, 255, 0.3);
+}
+
+.zhixue-chat-send-btn:hover {
+    background: var(--zhixue-primary-hover);
+    transform: scale(1.06);
+}
+
+.zhixue-chat-send-btn:active {
+    transform: scale(0.94);
+}
+
+/* =========================================
+   模型管理视图
+   ========================================= */
+
+.zhixue-model-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 16px;
+    border-bottom: 0.5px solid var(--zhixue-border);
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+    background: var(--zhixue-bg-elevated);
+}
+
+.zhixue-model-title {
+    color: var(--zhixue-text);
+    font-weight: 600;
+    font-size: 13px;
+    letter-spacing: -0.01em;
+}
+
+.zhixue-model-header-right {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* --- 状态指示灯 (Apple 风格脉冲) --- */
+.zhixue-model-status-dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    display: inline-block;
+}
+
+.zhixue-model-status-dot.zhixue-model-status-online {
+    background: var(--zhixue-success);
+    box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.2);
+    animation: zhixue-pulse 2s ease-in-out infinite;
+}
+
+@keyframes zhixue-pulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(52, 199, 89, 0.2); }
+    50%       { box-shadow: 0 0 0 5px rgba(52, 199, 89, 0.08); }
+}
+
+.zhixue-model-status-dot.zhixue-model-status-offline {
+    background: var(--zhixue-danger);
+    box-shadow: 0 0 0 2px rgba(255, 59, 48, 0.2);
+}
+
+.zhixue-model-status-text {
+    font-size: 11px;
+    color: var(--zhixue-text-secondary);
+    font-weight: 500;
+}
+
+/* --- 刷新按钮 --- */
+.zhixue-model-refresh-btn {
+    padding: 4px 10px;
+    border-radius: 100px;
+    border: none;
+    background: var(--zhixue-fill);
+    color: var(--zhixue-text);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all var(--zhixue-transition);
+}
+
+.zhixue-model-refresh-btn:hover {
+    background: var(--zhixue-primary);
+    color: white;
+}
+
+.zhixue-model-refresh-btn:active {
+    transform: scale(0.95);
+}
+
+/* --- 内容区 --- */
+.zhixue-model-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+.zhixue-model-content:hover {
+    scrollbar-color: rgba(0, 0, 0, 0.15) transparent;
+}
+
+.zhixue-model-loading,
+.zhixue-model-offline {
+    text-align: center;
+    padding: 32px 16px;
+    color: var(--zhixue-text-secondary);
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.zhixue-model-hint {
+    text-align: center;
+    font-size: 12px;
+    color: var(--zhixue-text-secondary);
+    margin-top: 6px;
+}
+
+/* --- 分区 --- */
+.zhixue-model-section {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
+
+.zhixue-model-section-header {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+}
+
+.zhixue-model-section-title {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--zhixue-text);
+    letter-spacing: -0.01em;
+}
+
+.zhixue-model-section-desc {
+    font-size: 11px;
+    color: var(--zhixue-text-secondary);
+}
+
+.zhixue-model-current {
+    font-size: 12px;
+    color: var(--zhixue-text-secondary);
+    padding: 2px 0;
+}
+
+.zhixue-model-current strong {
+    color: var(--zhixue-primary);
+    font-weight: 600;
+}
+
+/* --- 模型卡片 --- */
+.zhixue-model-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.zhixue-model-card {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 14px;
+    border-radius: var(--zhixue-radius-sm);
+    border: 0.5px solid var(--zhixue-border);
+    background: var(--zhixue-bg-elevated);
+    transition: all var(--zhixue-transition);
+    cursor: default;
+}
+
+.zhixue-model-card:hover {
+    border-color: var(--zhixue-primary);
+    box-shadow: var(--zhixue-shadow);
+    transform: translateY(-1px);
+}
+
+.zhixue-model-card-active {
+    border-color: var(--zhixue-success);
+    background: var(--zhixue-success-bg);
+}
+
+.zhixue-model-card-active:hover {
+    border-color: var(--zhixue-success);
+    box-shadow: 0 2px 8px rgba(52, 199, 89, 0.15);
+}
+
+.zhixue-model-card-info {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.zhixue-model-card-name {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--zhixue-text);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    letter-spacing: -0.01em;
+}
+
+.zhixue-model-card-meta {
+    font-size: 11px;
+    color: var(--zhixue-text-secondary);
+    display: flex;
+    gap: 4px;
+}
+
+.zhixue-model-card-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 3px;
+    padding: 3px 10px;
+    border-radius: 100px;
+    background: var(--zhixue-success-bg);
+    color: var(--zhixue-success);
+    font-size: 11px;
+    font-weight: 600;
+}
+
+.zhixue-model-card-btn {
+    padding: 4px 14px;
+    border-radius: 100px;
+    border: 0.5px solid var(--zhixue-primary);
+    background: transparent;
+    color: var(--zhixue-primary);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    transition: all var(--zhixue-transition);
+}
+
+.zhixue-model-card-btn:hover {
+    background: var(--zhixue-primary);
+    color: white;
+    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.25);
+}
+
+.zhixue-model-card-btn:active {
+    transform: scale(0.95);
+}
+
+.zhixue-model-empty {
+    padding: 20px 16px;
+    text-align: center;
+    color: var(--zhixue-text-secondary);
+    font-size: 12px;
+    border: 1px dashed var(--zhixue-border);
+    border-radius: var(--zhixue-radius-sm);
+    background: var(--zhixue-bg);
+}
+
+/* --- 手动输入 --- */
+.zhixue-model-custom {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 2px;
+}
+
+.zhixue-model-custom-input {
+    flex: 1;
+    padding: 7px 12px;
+    border-radius: var(--zhixue-radius-sm);
+    border: 0.5px solid var(--zhixue-border);
+    background: var(--zhixue-bg);
+    color: var(--zhixue-text);
+    font-size: 13px;
+    outline: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    transition: all var(--zhixue-transition);
+}
+
+.zhixue-model-custom-input:focus {
+    border-color: var(--zhixue-primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+.zhixue-model-custom-btn {
+    padding: 6px 16px;
+    border-radius: 100px;
+    border: none;
+    background: var(--zhixue-fill);
+    color: var(--zhixue-text);
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all var(--zhixue-transition);
+}
+
+.zhixue-model-custom-btn:hover {
+    background: var(--zhixue-primary);
+    color: white;
+}
+
+.zhixue-model-custom-btn:active {
+    transform: scale(0.95);
+}
+
+/* --- 底部 --- */
+.zhixue-model-footer {
+    padding: 12px 0 4px;
+    border-top: 0.5px solid var(--zhixue-border);
+    font-size: 12px;
+    color: var(--zhixue-text-secondary);
+    line-height: 1.6;
+}
+
+.zhixue-model-footer code {
+    background: var(--zhixue-fill);
+    padding: 2px 7px;
+    border-radius: 5px;
+    font-size: 11.5px;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* =========================================
+   连接配置
+   ========================================= */
+
+.zhixue-config-row {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding: 10px 0;
+    border-bottom: 0.5px solid var(--zhixue-border);
+}
+
+.zhixue-config-row:last-child {
+    border-bottom: none;
+}
+
+.zhixue-config-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--zhixue-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.zhixue-config-input {
+    padding: 8px 12px;
+    border-radius: var(--zhixue-radius-sm);
+    border: 0.5px solid var(--zhixue-border);
+    background: var(--zhixue-bg);
+    color: var(--zhixue-text);
+    font-size: 13px;
+    outline: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    transition: all var(--zhixue-transition);
+}
+
+.zhixue-config-input:focus {
+    border-color: var(--zhixue-primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+.zhixue-config-save-btn {
+    align-self: flex-start;
+    padding: 5px 16px;
+    border-radius: 100px;
+    border: none;
+    background: var(--zhixue-primary);
+    color: white;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    transition: all var(--zhixue-transition);
+    box-shadow: 0 1px 4px rgba(0, 122, 255, 0.25);
+    margin-top: 2px;
+}
+
+.zhixue-config-save-btn:hover {
+    background: var(--zhixue-primary-hover);
+    box-shadow: 0 2px 8px rgba(0, 122, 255, 0.35);
+    transform: scale(1.03);
+}
+
+.zhixue-config-save-btn:active {
+    transform: scale(0.96);
+}
+
+.zhixue-config-hint {
+    font-size: 11px;
+    color: var(--zhixue-text-secondary);
+    margin-top: 1px;
+}
+
+/* =========================================
+   模型指示器 (ChatView 标题栏)
+   ========================================= */
+
+.zhixue-model-indicator {
+    padding: 3px 10px;
+    border-radius: 100px;
+    border: none;
+    background: var(--zhixue-fill);
+    color: var(--zhixue-text-secondary);
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    white-space: nowrap;
+    transition: all var(--zhixue-transition);
+    margin-left: auto;
+    position: relative;
+}
+
+.zhixue-model-indicator:hover {
+    background: var(--zhixue-primary-bg);
+    color: var(--zhixue-primary);
+}
+
+.zhixue-model-indicator:active {
+    transform: scale(0.96);
+}
+
+.zhixue-model-indicator.zhixue-model-indicator-open {
+    background: var(--zhixue-primary-bg);
+    color: var(--zhixue-primary);
+}
+
+/* =========================================
+   模型下拉菜单（参照 WorkBuddy 的定位策略）
+   ========================================= */
+
+.zhixue-model-dropdown {
+    position: fixed;
+    z-index: 9999;
+    min-width: 260px;
+    max-width: 340px;
+    max-height: 420px;
+    overflow-y: auto;
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: var(--zhixue-radius);
+    box-shadow: var(--zhixue-shadow-lg);
+    padding: 6px;
+    animation: zhixue-dropdown-in 0.15s ease-out;
+    scrollbar-width: thin;
+    scrollbar-color: transparent transparent;
+}
+
+.zhixue-model-dropdown:hover {
+    scrollbar-color: rgba(0, 0, 0, 0.12) transparent;
+}
+
+@keyframes zhixue-dropdown-in {
+    from {
+        opacity: 0;
+    }
+    to {
+        opacity: 1;
+    }
+}
+
+.zhixue-model-dropdown-loading,
+.zhixue-model-dropdown-empty {
+    padding: 24px 16px;
+    text-align: center;
+    font-size: 13px;
+    color: var(--text-muted);
+    font-weight: 500;
+    line-height: 1.5;
+}
+
+.zhixue-model-dropdown-title {
+    padding: 6px 10px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.zhixue-model-dropdown-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all var(--zhixue-transition);
+    font-size: 13px;
+    color: var(--text-normal);
+}
+
+.zhixue-model-dropdown-item:hover {
+    background: var(--background-modifier-hover);
+}
+
+.zhixue-model-dropdown-item:active {
+    background: var(--background-modifier-active);
+    transform: scale(0.98);
+}
+
+.zhixue-model-dropdown-item-active {
+    background: rgba(0, 122, 255, 0.1);
+    color: var(--text-normal);
+}
+
+.zhixue-model-dropdown-item-active:hover {
+    background: rgba(0, 122, 255, 0.1);
+}
+
+.zhixue-model-dropdown-item-name {
+    flex: 1;
+    font-weight: 500;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 12.5px;
+    letter-spacing: -0.01em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text-normal);
+}
+
+.zhixue-model-dropdown-item-check {
+    color: var(--interactive-accent);
+    font-weight: 700;
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+.zhixue-model-dropdown-item-meta {
+    font-size: 11px;
+    color: var(--text-muted);
+    flex-shrink: 0;
+}
+
+.zhixue-model-dropdown-item-icon {
+    font-size: 14px;
+    flex-shrink: 0;
+}
+
+/* --- 分区标题 --- */
+.zhixue-model-dropdown-section {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.zhixue-model-dropdown-section-title {
+    padding: 8px 10px 4px;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    letter-spacing: 0.01em;
+}
+
+/* --- 模型项 meta 信息行 --- */
+.zhixue-model-dropdown-item-meta-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-shrink: 0;
+}
+
+.zhixue-model-dropdown-item-provider {
+    font-size: 10px;
+    color: var(--text-muted);
+    padding: 1px 6px;
+    border-radius: 100px;
+    background: var(--background-modifier-border);
+    white-space: nowrap;
+}
+
+/* --- 提示文字 --- */
+.zhixue-model-dropdown-tip {
+    padding: 10px 12px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+    line-height: 1.5;
+}
+
+/* --- 禁用项（未配置 API Key） --- */
+.zhixue-model-dropdown-item-disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+}
+
+.zhixue-model-dropdown-item-disabled:hover {
+    background: transparent;
+}
+
+.zhixue-model-dropdown-divider {
+    height: 1px;
+    background: var(--background-modifier-border);
+    margin: 4px 6px;
+}
+
+.zhixue-model-dropdown-settings .zhixue-model-dropdown-item-name {
+    font-family: var(--font-text-theme);
+    color: var(--interactive-accent);
+}
+
+/* --- 手动输入区 --- */
+.zhixue-model-dropdown-custom {
+    display: flex;
+    gap: 6px;
+    padding: 4px 4px;
+}
+
+.zhixue-model-dropdown-custom-input {
+    flex: 1;
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 12.5px;
+    outline: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    transition: all var(--zhixue-transition);
+}
+
+.zhixue-model-dropdown-custom-input:focus {
+    border-color: var(--zhixue-primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.1);
+}
+
+.zhixue-model-dropdown-custom-btn {
+    padding: 5px 14px;
+    border-radius: 100px;
+    border: none;
+    background: var(--zhixue-primary);
+    color: white;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+    transition: all var(--zhixue-transition);
+    flex-shrink: 0;
+}
+
+.zhixue-model-dropdown-custom-btn:hover {
+    background: var(--zhixue-primary-hover);
+    transform: scale(1.03);
+}
+
+.zhixue-model-dropdown-custom-btn:active {
+    transform: scale(0.95);
+}
+
+/* =========================================
+   弹窗
+   ========================================= */
+
+.zhixue-modal-warning {
+    padding: 12px 14px;
+    margin: 12px 0;
+    border-radius: var(--zhixue-radius-sm);
+    background: var(--zhixue-warning-bg);
+    border: 0.5px solid rgba(255, 159, 10, 0.25);
+    color: #9A6400;
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.zhixue-modal-btns {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 16px;
+}
+
+/* =========================================
+   Dashboard 视图
+   ========================================= */
+
+.zhixue-dashboard {
+    padding: 32px 24px;
+    max-width: 960px;
+    margin: 0 auto;
+}
+
+.zhixue-dashboard-hero {
+    text-align: center;
+    padding: 40px 0 32px;
+    margin-bottom: 32px;
+}
+
+.zhixue-dashboard-hero h1 {
+    color: var(--zhixue-text);
+    font-weight: 700;
+    font-size: 28px;
+    letter-spacing: -0.02em;
+    margin-bottom: 8px;
+}
+
+.zhixue-dashboard-subtitle {
+    color: var(--zhixue-text-secondary);
+    font-size: 16px;
+    font-weight: 400;
+}
+
+.zhixue-dashboard-content {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.zhixue-dashboard-left {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.zhixue-dashboard-right {
+    display: flex;
+    flex-direction: column;
+    border: 0.5px solid var(--zhixue-border);
+    border-radius: var(--zhixue-radius-lg);
+    overflow: hidden;
+    max-height: 70vh;
+    box-shadow: var(--zhixue-shadow);
+}
+
+.zhixue-dashboard-section h3 {
+    margin-bottom: 12px;
+    color: var(--zhixue-primary);
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: -0.01em;
+}
+
+.zhixue-dashboard-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.zhixue-dashboard-note-item {
+    padding: 8px 12px;
+    border-radius: var(--zhixue-radius-sm);
+    background: var(--zhixue-bg);
+    transition: all var(--zhixue-transition);
+}
+
+.zhixue-dashboard-note-item:hover {
+    background: var(--zhixue-primary-bg);
+}
+
+.zhixue-note-link {
+    color: var(--zhixue-text);
+    text-decoration: none;
+    font-size: 13.5px;
+}
+
+.zhixue-note-link:hover {
+    color: var(--zhixue-primary);
+}
+
+.zhixue-empty {
+    color: var(--zhixue-text-secondary);
+    font-size: 13px;
+    font-style: italic;
+}
+
+/* === 习惯统计 === */
+.zhixue-habit-stats {
+    padding: 10px 14px;
+    background: var(--zhixue-bg);
+    border-radius: var(--zhixue-radius-sm);
+    font-size: 12px;
+    color: var(--zhixue-text-secondary);
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* === 状态栏 === */
+.zhixue-status {
+    color: var(--zhixue-primary);
+    cursor: pointer;
+    font-weight: 500;
+    font-size: 12px;
+}
+
+/* === 响应式 === */
+@media (max-width: 768px) {
+    .zhixue-dashboard-content {
+        grid-template-columns: 1fr;
+    }
+
+    .zhixue-dashboard-right {
+        max-height: 50vh;
+    }
+}
+
+/* =========================================
+   模型下拉 - 添加自定义模型
+   ========================================= */
+
+.zhixue-model-dropdown-add-item .zhixue-model-dropdown-item-icon {
+    font-size: 14px;
+}
+
+.zhixue-model-dropdown-add-item .zhixue-model-dropdown-item-name {
+    color: var(--zhixue-primary);
+    font-weight: 500;
+}
+
+/* 自定义模型删除按钮 */
+.zhixue-model-dropdown-item-delete {
+    margin-left: auto;
+    padding: 2px 6px;
+    border: none;
+    background: transparent;
+    color: var(--text-muted);
+    cursor: pointer;
+    font-size: 11px;
+    border-radius: 4px;
+    opacity: 0;
+    transition: all var(--zhixue-transition);
+    flex-shrink: 0;
+}
+
+.zhixue-model-dropdown-item:hover .zhixue-model-dropdown-item-delete {
+    opacity: 1;
+}
+
+.zhixue-model-dropdown-item-delete:hover {
+    background: rgba(255, 59, 48, 0.1);
+    color: var(--zhixue-danger);
+}
+
+/* =========================================
+   RAG 检索状态标签（ChatView 消息头）
+   ========================================= */
+
+.zhixue-rag-status {
+    font-size: 10px;
+    font-weight: 600;
+    padding: 2px 8px;
+    border-radius: 100px;
+    margin-left: 6px;
+    letter-spacing: 0.01em;
+}
+
+.zhixue-rag-active {
+    background: rgba(52, 199, 89, 0.12);
+    color: #34C759;
+}
+
+.zhixue-rag-missing {
+    background: rgba(255, 159, 10, 0.12);
+    color: #FF9F0A;
+}
+
+/* --- 检索调试信息（可折叠） --- */
+.zhixue-rag-debug {
+    margin-top: 8px;
+    padding: 0;
+    border: 0.5px solid var(--zhixue-border);
+    border-radius: var(--zhixue-radius-sm);
+    background: var(--zhixue-bg);
+    font-size: 12px;
+    overflow: hidden;
+}
+
+.zhixue-rag-debug summary {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-weight: 500;
+    color: var(--zhixue-text-secondary);
+    background: rgba(0, 0, 0, 0.02);
+    user-select: none;
+}
+
+.zhixue-rag-debug summary:hover {
+    background: rgba(0, 122, 255, 0.06);
+}
+
+.zhixue-rag-debug ul {
+    padding: 6px 12px 8px 24px;
+    margin: 0;
+    color: var(--zhixue-text-secondary);
+    font-size: 11.5px;
+    line-height: 1.6;
+}
+
+.zhixue-rag-debug li {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.zhixue-add-model-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.4);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 100000;
+    backdrop-filter: blur(4px);
+    animation: zhixue-modal-fade-in 0.15s ease;
+}
+
+@keyframes zhixue-modal-fade-in {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+.zhixue-add-model-dialog {
+    background: var(--background-primary);
+    border: 1px solid var(--background-modifier-border);
+    border-radius: 14px;
+    padding: 24px;
+    width: 380px;
+    max-width: 90vw;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.2);
+    animation: zhixue-dialog-slide-in 0.2s ease;
+}
+
+@keyframes zhixue-dialog-slide-in {
+    from { opacity: 0; transform: translateY(12px) scale(0.97); }
+    to { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.zhixue-add-model-dialog h3 {
+    margin: 0 0 18px 0;
+    font-size: 17px;
+    font-weight: 600;
+    color: var(--text-normal);
+    font-family: var(--font-interface);
+}
+
+.zhixue-add-model-dialog label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-muted);
+    margin-bottom: 5px;
+    margin-top: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.3px;
+}
+
+.zhixue-add-model-dialog label:first-of-type {
+    margin-top: 0;
+}
+
+.zhixue-add-model-input {
+    width: 100%;
+    padding: 9px 12px;
+    border-radius: 9px;
+    border: 1px solid var(--background-modifier-border);
+    background: var(--background-secondary);
+    color: var(--text-normal);
+    font-size: 13.5px;
+    outline: none;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    transition: all var(--zhixue-transition);
+    box-sizing: border-box;
+}
+
+.zhixue-add-model-input:focus {
+    border-color: var(--zhixue-primary);
+    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+}
+
+.zhixue-add-model-input::placeholder {
+    color: var(--text-faint);
+    font-family: var(--font-interface);
+}
+
+.zhixue-add-model-hint {
+    margin: 6px 0 0 0;
+    font-size: 11.5px;
+    color: var(--text-faint);
+    line-height: 1.5;
+}
+
+.zhixue-add-model-hint code {
+    background: var(--background-modifier-border);
+    padding: 1px 5px;
+    border-radius: 4px;
+    font-size: 11px;
+    color: var(--text-muted);
+}
+
+.zhixue-add-model-btn-row {
+    display: flex;
+    gap: 10px;
+    margin-top: 20px;
+    justify-content: flex-end;
+}
+
+.zhixue-add-model-btn {
+    padding: 8px 20px;
+    border-radius: 9px;
+    border: none;
+    cursor: pointer;
+    font-size: 13.5px;
+    font-weight: 600;
+    transition: all var(--zhixue-transition);
+    font-family: var(--font-interface);
+}
+
+.zhixue-add-model-btn-cancel {
+    background: var(--background-modifier-border);
+    color: var(--text-muted);
+}
+
+.zhixue-add-model-btn-cancel:hover {
+    background: var(--background-modifier-border-hover);
+}
+
+.zhixue-add-model-btn-confirm {
+    background: var(--zhixue-primary);
+    color: white;
+}
+
+.zhixue-add-model-btn-confirm:hover {
+    background: var(--zhixue-primary-hover);
+    transform: scale(1.02);
+}
+
+.zhixue-add-model-btn-confirm:active {
+    transform: scale(0.97);
+}
