@@ -32,4 +32,4 @@ pip install -r requirements.txt
 =======
 # ---obsidian-rag-
 一款obsidian的ai插件，后端采用rag-anything，采用fastapi封装，前端用typescirpt开发
->>>>>>> c77f38f3b26a2fafd182497e8a094a85e6effbc1
+>>>>>>>
