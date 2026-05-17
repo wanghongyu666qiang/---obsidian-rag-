@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 智学 (ZhiXue) - Obsidian AI 知识助手
 
 智学是一个为 Obsidian 打造的专属 AI RAG 知识助手。支持本地 Ollama 与 SiliconFlow 云端大模型，结合 LightRAG 图算法挖掘个人笔记。
@@ -28,3 +29,7 @@ pip install -r requirements.txt
 
 ## ⚠️ 隐私提醒
 已配置 .gitignore。请注意不要把个人的 data.json、ackend/.env 以及 _zhixue/ 数据目录上传至公开代码库！
+=======
+# ---obsidian-rag-
+一款obsidian的ai插件，后端采用rag-anything，采用fastapi封装，前端用typescirpt开发
+>>>>>>> c77f38f3b26a2fafd182497e8a094a85e6effbc1
