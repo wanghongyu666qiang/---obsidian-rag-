@@ -28,7 +28,7 @@ pip install -r requirements.txt
 3. 通过侧边栏开始提问！
 
 ## ⚠️ 隐私提醒
-已配置 .gitignore。请注意不要把个人的 data.json、ackend/.env 以及 _zhixue/ 数据目录上传至公开代码库！
+已配置 .gitignore。请注意不要把个人的 data.json、backend/.env 以及 _zhixue/ 数据目录上传至公开代码库！
 =======
 # ---obsidian-rag-
 一款obsidian的ai插件，后端采用rag-anything，采用fastapi封装，前端用typescirpt开发
