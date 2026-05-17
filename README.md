@@ -6,7 +6,7 @@
 ## 🛠️ 安装与部署指南
 
 ### 1. 编译前端插件
-`ash
+`bash
 # 将代码放入 YourVault/.obsidian/plugins/zhixue
 cd YourVault/.obsidian/plugins/zhixue
 npm install
@@ -15,7 +15,7 @@ npm run build
 
 ### 2. 部署 Python 后台环境
 建议使用 Python 虚拟环境：
-`ash
+`bash
 cd backend
 python -m venv venv
 venv\Scripts\activate
